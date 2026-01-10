@@ -137,6 +137,7 @@
         "stockDepleted": "非常抱歉！由于多人几乎同时下单付款，您慢了一步，最后的库存刚好被抢走。您的付款已收到，请联系管理员申请全额退款。",
         "orderRefunded": "此订单已退款",
         "cancelledMessage": "订单超时未支付已取消。",
+        "paymentSuccess": "支付成功！",
         "status": {
             "pending": "待支付",
             "paid": "已支付",
