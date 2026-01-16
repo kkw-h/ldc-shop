@@ -36,16 +36,25 @@ export function HeaderLogo({ adminName, shopNameOverride, shopLogoOverride }: { 
 
 export function HeaderNav({ isAdmin, isLoggedIn }: { isAdmin: boolean; isLoggedIn: boolean }) {
     const { t } = useI18n()
+    const isZh = t('common.myOrders').includes('订单')
 
     return (
         <div className="hidden md:flex items-center gap-6">
             {isLoggedIn && (
-                <Link
-                    href="/orders"
-                    className="flex items-center text-sm font-medium text-muted-foreground hover:text-primary transition-colors"
-                >
-                    {t('common.myOrders')}
-                </Link>
+                <>
+                    <Link
+                        href="/profile"
+                        className="flex items-center text-sm font-medium text-muted-foreground hover:text-primary transition-colors"
+                    >
+                        {isZh ? "个人中心" : "Profile"}
+                    </Link>
+                    <Link
+                        href="/orders"
+                        className="flex items-center text-sm font-medium text-muted-foreground hover:text-primary transition-colors"
+                    >
+                        {isZh ? "订单" : "Orders"}
+                    </Link>
+                </>
             )}
             {isAdmin && (
                 <Link
@@ -89,10 +98,10 @@ export function HeaderUserMenuItems({ isAdmin }: { isAdmin: boolean }) {
     return (
         <>
             <DropdownMenuItem asChild>
-                <Link href="/profile">{t('common.myOrders').includes('订单') ? "我的" : "Me"}</Link>
+                <Link href="/profile">{t('common.myOrders').includes('订单') ? "个人中心" : "Profile"}</Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-                <Link href="/orders">{t('common.myOrders')}</Link>
+                <Link href="/orders">{t('common.myOrders').includes('订单') ? "订单" : "Orders"}</Link>
             </DropdownMenuItem>
             {isAdmin && (
                 <DropdownMenuItem asChild>

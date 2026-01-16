@@ -40,7 +40,7 @@ export function MobileNav({ isLoggedIn, isAdmin }: MobileNavProps) {
         }] : []),
         {
             href: "/profile",
-            label: isZh ? "我的" : "Me",
+            label: isZh ? "个人中心" : "Profile",
             icon: User,
             active: pathname === "/profile"
         }
