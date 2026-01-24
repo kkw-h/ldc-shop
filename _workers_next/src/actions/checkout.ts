@@ -364,6 +364,26 @@ export async function createOrder(productId: string, quantity: number = 1, email
                 });
                 orderInserted = true
 
+                if (user?.id) {
+                    try {
+                        await createUserNotification({
+                            userId: user.id,
+                            type: 'order_delivered',
+                            titleKey: 'profile.notifications.orderDeliveredTitle',
+                            contentKey: 'profile.notifications.orderDeliveredBody',
+                            data: {
+                                params: {
+                                    orderId,
+                                    productName: product.name
+                                },
+                                href: `/order/${orderId}`
+                            }
+                        })
+                    } catch {
+                        // best effort
+                    }
+                }
+
                 after(async () => {
                     // Notify admin for points-only payment
                     console.log('[Checkout] Points payment completed, sending notification for order:', orderId);
@@ -390,22 +410,6 @@ export async function createOrder(productId: string, quantity: number = 1, email
                             productName: product.name,
                             cardKeys: joinedKeys
                         }).catch(err => console.error('[Email] Points payment email failed:', err));
-                    }
-
-                    if (user?.id) {
-                        await createUserNotification({
-                            userId: user.id,
-                            type: 'order_delivered',
-                            titleKey: 'profile.notifications.orderDeliveredTitle',
-                            contentKey: 'profile.notifications.orderDeliveredBody',
-                            data: {
-                                params: {
-                                    orderId,
-                                    productName: product.name
-                                },
-                                href: `/order/${orderId}`
-                            }
-                        })
                     }
                 })
 

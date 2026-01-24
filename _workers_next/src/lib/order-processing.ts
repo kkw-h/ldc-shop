@@ -131,13 +131,13 @@ export async function processOrderFulfillment(orderId: string, paidAmount: numbe
 
                 console.log(`[Fulfill] Shared product order ${orderId} delivered. Card: ${key}`);
 
-                after(async () => {
-                    try {
-                        await notifyUserDelivered(product?.name);
-                    } catch (err) {
-                        console.error('[Notification] User delivery notify failed:', err);
-                    }
+                try {
+                    await notifyUserDelivered(product?.name);
+                } catch (err) {
+                    console.error('[Notification] User delivery notify failed:', err);
+                }
 
+                after(async () => {
                     try {
                         const user = await db.query.loginUsers.findFirst({
                             where: eq(users.userId, order.userId || ''),
@@ -265,6 +265,12 @@ export async function processOrderFulfillment(orderId: string, paidAmount: numbe
                 .where(eq(orders.orderId, orderId));
             console.log(`[Fulfill] Order ${orderId} delivered successfully!`);
 
+            try {
+                await notifyUserDelivered(product?.name || order.productName);
+            } catch (err) {
+                console.error('[Notification] User delivery notify failed:', err);
+            }
+
             after(async () => {
                 const product = await db.query.products.findFirst({
                     where: eq(products.id, order.productId),
@@ -287,12 +293,6 @@ export async function processOrderFulfillment(orderId: string, paidAmount: numbe
                     });
                 } catch (err) {
                     console.error('[Notification] Delivery notify failed:', err);
-                }
-
-                try {
-                    await notifyUserDelivered(product?.name || order.productName);
-                } catch (err) {
-                    console.error('[Notification] User delivery notify failed:', err);
                 }
 
                 if (order.email) {
