@@ -22,6 +22,9 @@ import {
 import ReactMarkdown from 'react-markdown'
 import { Loader2, Minus, Plus, Share2 } from "lucide-react"
 import { toast } from "sonner"
+import Image from "next/image"
+import { INFINITE_STOCK } from "@/lib/constants"
+import { getBuyPageMeta } from "@/actions/buy"
 
 interface Product {
     id: string
@@ -54,6 +57,7 @@ interface BuyContentProps {
     reviewCount?: number
     canReview?: boolean
     reviewOrderId?: string
+    emailConfigured?: boolean
 }
 
 export function BuyContent({
@@ -65,19 +69,58 @@ export function BuyContent({
     averageRating = 0,
     reviewCount = 0,
     canReview = false,
-    reviewOrderId
+    reviewOrderId,
+    emailConfigured = false
 }: BuyContentProps) {
     const { t } = useI18n()
     const [shareUrl, setShareUrl] = useState('')
     const [quantity, setQuantity] = useState(1)
     const [showWarningDialog, setShowWarningDialog] = useState(false)
     const [warningConfirmed, setWarningConfirmed] = useState(false)
+    const [reviewsState, setReviewsState] = useState<Review[]>(reviews)
+    const [averageRatingState, setAverageRatingState] = useState(averageRating)
+    const [reviewCountState, setReviewCountState] = useState(reviewCount)
+    const [canReviewState, setCanReviewState] = useState(canReview)
+    const [reviewOrderIdState, setReviewOrderIdState] = useState<string | undefined>(reviewOrderId)
+    const [emailConfiguredState, setEmailConfiguredState] = useState(emailConfigured)
+    const [metaLoading, setMetaLoading] = useState(true)
+    const [metaRefreshSeq, setMetaRefreshSeq] = useState(0)
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
             setShareUrl(window.location.href)
         }
     }, [product.id])
+
+    useEffect(() => {
+        let cancelled = false
+
+        const loadMeta = async () => {
+            setMetaLoading(true)
+            try {
+                const meta = await getBuyPageMeta(product.id)
+                if (cancelled) return
+
+                setReviewsState(meta.reviews)
+                setAverageRatingState(meta.averageRating)
+                setReviewCountState(meta.reviewCount)
+                setCanReviewState(meta.canReview)
+                setReviewOrderIdState(meta.reviewOrderId)
+                setEmailConfiguredState(meta.emailConfigured)
+            } catch {
+                // Keep initial values when lazy fetch fails.
+            } finally {
+                if (!cancelled) {
+                    setMetaLoading(false)
+                }
+            }
+        }
+
+        void loadMeta()
+        return () => {
+            cancelled = true
+        }
+    }, [product.id, metaRefreshSeq])
 
     const shareLinks = useMemo(() => {
         if (!shareUrl) return null
@@ -113,7 +156,7 @@ export function BuyContent({
                 <Card className="tech-card overflow-hidden">
                     <CardHeader className="relative pb-0">
                         {/* Background glow effect */}
-                        <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -z-10" />
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-primary/3 rounded-full blur-3xl -z-10" />
 
                         <div className="flex items-start justify-between gap-4">
                             <div className="space-y-2">
@@ -130,7 +173,7 @@ export function BuyContent({
                                 )}
                             </div>
                             <div className="text-right shrink-0">
-                                <div className="text-4xl font-bold gradient-text">
+                                <div className="text-4xl font-semibold text-foreground">
                                     {Number(product.price)}
                                 </div>
                                 {product.compareAtPrice && Number(product.compareAtPrice) > Number(product.price) && (
@@ -144,7 +187,7 @@ export function BuyContent({
                                         variant={stockCount > 0 ? "outline" : "destructive"}
                                         className={stockCount > 0 ? "border-primary/30 text-primary" : ""}
                                     >
-                                        {stockCount >= 999999 ? `${t('common.stock')}: ${t('common.unlimited')}` : (stockCount > 0 ? `${t('common.stock')}: ${stockCount}` : t('common.outOfStock'))}
+                                        {stockCount >= INFINITE_STOCK ? `${t('common.stock')}: ${t('common.unlimited')}` : (stockCount > 0 ? `${t('common.stock')}: ${stockCount}` : t('common.outOfStock'))}
                                     </Badge>
                                     {typeof product.purchaseLimit === 'number' && product.purchaseLimit > 0 && (
                                         <Badge variant="secondary" className="mt-2">
@@ -156,19 +199,20 @@ export function BuyContent({
                         </div>
                     </CardHeader>
 
-                    <Separator className="my-6 bg-border/50" />
+                    <Separator className="my-8 bg-border/20" />
 
                     <CardContent className="space-y-6">
                         {/* Product Image */}
-                        <div className="aspect-video relative bg-gradient-to-br from-muted/20 to-muted/5 rounded-xl overflow-hidden flex items-center justify-center border border-border/30">
-                            <img
-                                src={product.image || `https://api.dicebear.com/7.x/shapes/svg?seed=${product.id}`}
-                                alt={product.name}
-                                className="max-w-full max-h-full object-contain"
-                            />
-                            {/* Corner accents */}
-                            <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-primary/30 rounded-tl-xl" />
-                            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-primary/30 rounded-br-xl" />
+                        <div className="rounded-2xl border border-border/30 bg-card/40 p-4">
+                            <div className="aspect-video relative overflow-hidden rounded-xl bg-muted/10">
+                                <Image
+                                    src={product.image || `https://api.dicebear.com/7.x/shapes/svg?seed=${product.id}`}
+                                    alt={product.name}
+                                    fill
+                                    sizes="(max-width: 768px) 100vw, 700px"
+                                    className="object-contain"
+                                />
+                            </div>
                         </div>
 
 
@@ -186,13 +230,13 @@ export function BuyContent({
                         </div>
                     </CardContent>
 
-                    <Separator className="bg-border/50" />
+                    <Separator className="bg-border/20" />
 
                     <CardFooter className="pt-6 flex flex-col gap-3">
                         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
                             <div className="flex-1">
                                 {isLoggedIn ? (
-                                    stockCount > 0 || stockCount >= 999999 ? (
+                                    stockCount > 0 || stockCount >= INFINITE_STOCK ? (
                                         <div className="flex flex-col gap-4 w-full sm:w-auto">
                                             <div className="flex items-center gap-3">
                                                 <div className="flex items-center border border-border rounded-md">
@@ -210,8 +254,8 @@ export function BuyContent({
                                                         value={quantity}
                                                         onChange={(e) => {
                                                             const val = parseInt(e.target.value) || 1
-                                                            // For shared products (stock >= 999999), max is only limited by purchaseLimit
-                                                            const maxStock = stockCount >= 999999 ? 999999 : (stockCount - lockedStockCount)
+                                                            // For shared products (infinite stock), max is only limited by purchaseLimit
+                                                            const maxStock = stockCount >= INFINITE_STOCK ? INFINITE_STOCK : (stockCount - lockedStockCount)
                                                             const max = product.purchaseLimit && product.purchaseLimit > 0
                                                                 ? Math.min(maxStock, product.purchaseLimit)
                                                                 : maxStock
@@ -224,8 +268,8 @@ export function BuyContent({
                                                             let val = parseInt(e.target.value)
                                                             if (isNaN(val) || val < 1) val = 1
 
-                                                            const maxStock = stockCount >= 999999 ? 999999 : (stockCount - lockedStockCount)
-                                                            const limit = product.purchaseLimit && product.purchaseLimit > 0 ? product.purchaseLimit : 999999
+                                                            const maxStock = stockCount >= INFINITE_STOCK ? INFINITE_STOCK : (stockCount - lockedStockCount)
+                                                            const limit = product.purchaseLimit && product.purchaseLimit > 0 ? product.purchaseLimit : INFINITE_STOCK
                                                             const max = Math.min(maxStock, limit)
 
                                                             if (val > max) {
@@ -239,8 +283,8 @@ export function BuyContent({
                                                         min={1}
                                                         max={
                                                             product.purchaseLimit && product.purchaseLimit > 0
-                                                                ? Math.min(stockCount >= 999999 ? 999999 : (stockCount - lockedStockCount), product.purchaseLimit)
-                                                                : (stockCount >= 999999 ? 999999 : (stockCount - lockedStockCount))
+                                                                ? Math.min(stockCount >= INFINITE_STOCK ? INFINITE_STOCK : (stockCount - lockedStockCount), product.purchaseLimit)
+                                                                : (stockCount >= INFINITE_STOCK ? INFINITE_STOCK : (stockCount - lockedStockCount))
                                                         }
                                                     />
                                                     <Button
@@ -248,8 +292,8 @@ export function BuyContent({
                                                         size="icon"
                                                         className="h-8 w-8 rounded-none border-l border-border"
                                                         onClick={() => {
-                                                            const maxStock = stockCount >= 999999 ? 999999 : (stockCount - lockedStockCount)
-                                                            const limit = product.purchaseLimit && product.purchaseLimit > 0 ? product.purchaseLimit : 999999
+                                                            const maxStock = stockCount >= INFINITE_STOCK ? INFINITE_STOCK : (stockCount - lockedStockCount)
+                                                            const limit = product.purchaseLimit && product.purchaseLimit > 0 ? product.purchaseLimit : INFINITE_STOCK
                                                             const max = Math.min(maxStock, limit)
 
                                                             if (quantity < max) {
@@ -258,8 +302,8 @@ export function BuyContent({
                                                         }}
                                                         disabled={
                                                             quantity >= (product.purchaseLimit && product.purchaseLimit > 0
-                                                                ? Math.min(stockCount >= 999999 ? 999999 : (stockCount - lockedStockCount), product.purchaseLimit)
-                                                                : (stockCount >= 999999 ? 999999 : (stockCount - lockedStockCount)))
+                                                                ? Math.min(stockCount >= INFINITE_STOCK ? INFINITE_STOCK : (stockCount - lockedStockCount), product.purchaseLimit)
+                                                                : (stockCount >= INFINITE_STOCK ? INFINITE_STOCK : (stockCount - lockedStockCount)))
                                                         }
                                                     >
                                                         <Plus className="h-4 w-4" />
@@ -273,7 +317,7 @@ export function BuyContent({
                                             {product.purchaseWarning && !warningConfirmed ? (
                                                 <Dialog open={showWarningDialog} onOpenChange={setShowWarningDialog}>
                                                     <DialogTrigger asChild>
-                                                        <Button size="lg" className="w-full md:w-auto bg-foreground text-background hover:bg-foreground/90">
+                                                        <Button size="lg" className="w-full md:w-auto bg-primary text-primary-foreground hover:bg-primary/90">
                                                             {t('common.buyNow')}
                                                         </Button>
                                                     </DialogTrigger>
@@ -296,7 +340,7 @@ export function BuyContent({
                                                             <Button onClick={() => {
                                                                 setWarningConfirmed(true)
                                                                 setShowWarningDialog(false)
-                                                            }} className="bg-foreground text-background hover:bg-foreground/90">
+                                                            }} className="bg-primary text-primary-foreground hover:bg-primary/90">
                                                                 {t('buy.confirmWarning')}
                                                             </Button>
                                                         </div>
@@ -309,6 +353,7 @@ export function BuyContent({
                                                     productName={product.name}
                                                     quantity={quantity}
                                                     autoOpen={warningConfirmed && !!product.purchaseWarning}
+                                                    emailConfigured={emailConfiguredState}
                                                 />
                                             )}
                                         </div>
@@ -416,11 +461,11 @@ export function BuyContent({
                         <div className="flex items-center justify-between">
                             <CardTitle className="flex items-center gap-3">
                                 {t('review.title')}
-                                {reviewCount > 0 && (
+                                {reviewCountState > 0 && (
                                     <div className="flex items-center gap-2">
-                                        <StarRating rating={Math.round(averageRating)} size="sm" />
+                                        <StarRating rating={Math.round(averageRatingState)} size="sm" />
                                         <span className="text-sm font-normal text-muted-foreground">
-                                            ({averageRating.toFixed(1)})
+                                            ({averageRatingState.toFixed(1)})
                                         </span>
                                     </div>
                                 )}
@@ -428,17 +473,28 @@ export function BuyContent({
                         </div>
                     </CardHeader>
                     <CardContent className="space-y-6">
-                        {canReview && reviewOrderId && (
+                        {canReviewState && reviewOrderIdState && (
                             <div className="p-4 border rounded-lg bg-muted/20">
                                 <h3 className="text-sm font-medium mb-3">{t('review.leaveReview')}</h3>
-                                <ReviewForm productId={product.id} orderId={reviewOrderId} />
+                                <ReviewForm
+                                    productId={product.id}
+                                    orderId={reviewOrderIdState}
+                                    onSuccess={() => setMetaRefreshSeq((prev) => prev + 1)}
+                                />
                             </div>
                         )}
-                        <ReviewList
-                            reviews={reviews}
-                            averageRating={averageRating}
-                            totalCount={reviewCount}
-                        />
+                        {metaLoading ? (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <span>{t('common.loading')}</span>
+                            </div>
+                        ) : (
+                            <ReviewList
+                                reviews={reviewsState}
+                                averageRating={averageRatingState}
+                                totalCount={reviewCountState}
+                            />
+                        )}
                     </CardContent>
                 </Card>
             </div>
