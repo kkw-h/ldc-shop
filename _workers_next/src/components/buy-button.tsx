@@ -4,11 +4,13 @@ import { useState, useEffect, useRef } from "react"
 import { createOrder } from "@/actions/checkout"
 import { getUserPoints } from "@/actions/points"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Loader2, Coins } from "lucide-react"
 import { toast } from "sonner"
 import { useI18n } from "@/lib/i18n/context"
+import { cn } from "@/lib/utils"
 
 interface BuyButtonProps {
     productId: string
@@ -16,16 +18,40 @@ interface BuyButtonProps {
     productName: string
     disabled?: boolean
     quantity?: number
-    autoOpen?: boolean // Auto-open dialog when mounted (for after warning confirmation)
+    autoOpen?: boolean
+    emailConfigured?: boolean
+    answers?: string[]
+    className?: string
+    maxPointsDiscount?: string | number | null
 }
 
-export function BuyButton({ productId, price, productName, disabled, quantity = 1, autoOpen = false }: BuyButtonProps) {
+function getMaxPointDeduction(totalAmount: number, quantity: number, maxPointsDiscount: string | number | null | undefined) {
+    const rawLimit = typeof maxPointsDiscount === 'string' ? maxPointsDiscount.trim() : maxPointsDiscount
+    if (rawLimit === null || rawLimit === undefined || rawLimit === '') {
+        return Math.ceil(totalAmount)
+    }
+
+    const unitLimit = Number(rawLimit)
+    if (!Number.isFinite(unitLimit) || unitLimit < 0) {
+        return Math.ceil(totalAmount)
+    }
+
+    const cappedAmount = Math.min(totalAmount, unitLimit * quantity)
+    if (cappedAmount >= totalAmount) {
+        return Math.ceil(totalAmount)
+    }
+
+    return Math.floor(Math.max(0, cappedAmount))
+}
+
+export function BuyButton({ productId, price, productName, disabled, quantity = 1, autoOpen = false, emailConfigured = false, answers, className, maxPointsDiscount }: BuyButtonProps) {
     const [loading, setLoading] = useState(false)
     const [open, setOpen] = useState(false)
     const [points, setPoints] = useState(0)
     const [usePoints, setUsePoints] = useState(false)
     const [pointsLoading, setPointsLoading] = useState(false)
     const [hasAutoOpened, setHasAutoOpened] = useState(false)
+    const [email, setEmail] = useState('')
     const isNavigatingRef = useRef(false)
     const { t } = useI18n()
 
@@ -38,8 +64,10 @@ export function BuyButton({ productId, price, productName, disabled, quantity = 
         try {
             const p = await getUserPoints()
             setPoints(p)
+            setUsePoints(p > 0)
         } catch (e) {
             console.error(e)
+            setUsePoints(false)
         } finally {
             setPointsLoading(false)
         }
@@ -59,10 +87,10 @@ export function BuyButton({ productId, price, productName, disabled, quantity = 
 
     const handleBuy = async () => {
         if (isNavigatingRef.current) return
-        
+
         try {
             setLoading(true)
-            const result = await createOrder(productId, quantity, undefined, usePoints)
+            const result = await createOrder(productId, quantity, email, usePoints, answers)
 
             if (!result?.success) {
                 const message = result?.error ? t(result.error) : t('common.error')
@@ -79,9 +107,9 @@ export function BuyButton({ productId, price, productName, disabled, quantity = 
                 return
             }
 
-            const { url, params } = result
+            const { params } = result
 
-            if (!params || !url) {
+            if (!params) {
                 toast.error(t('common.error'))
                 if (!isNavigatingRef.current) setLoading(false)
                 return
@@ -90,11 +118,11 @@ export function BuyButton({ productId, price, productName, disabled, quantity = 
             if (params) {
                 // Mark as navigating to prevent React errors on Safari
                 isNavigatingRef.current = true
-                
+
                 // Submit Form immediately without closing dialog
                 const form = document.createElement('form')
                 form.method = 'POST'
-                form.action = url as string
+                form.action = '/paying'
 
                 Object.entries(params as Record<string, any>).forEach(([k, v]) => {
                     const input = document.createElement('input')
@@ -118,14 +146,18 @@ export function BuyButton({ productId, price, productName, disabled, quantity = 
     }
 
     // Calculation for UI
-    const pointsToUse = usePoints ? Math.min(points, Math.ceil(numericalPrice)) : 0
+    const maxPointDeduction = getMaxPointDeduction(numericalPrice, quantity, maxPointsDiscount)
+    const pointsToUse = usePoints ? Math.min(points, maxPointDeduction) : 0
     const finalPrice = Math.max(0, numericalPrice - pointsToUse)
 
     return (
         <>
             <Button
                 size="lg"
-                className="w-full md:w-auto bg-foreground text-background hover:bg-foreground/90 cursor-pointer"
+                className={cn(
+                    "h-12 w-full rounded-xl bg-primary px-6 font-medium text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 hover:shadow-xl hover:shadow-primary/25 active:scale-[0.99] disabled:opacity-50",
+                    className
+                )}
                 onClick={handleInitialClick}
                 disabled={disabled}
             >
@@ -133,7 +165,7 @@ export function BuyButton({ productId, price, productName, disabled, quantity = 
             </Button>
 
             <Dialog open={open} onOpenChange={(v) => !isNavigatingRef.current && setOpen(v)}>
-                <DialogContent>
+                <DialogContent className="rounded-2xl sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle>{t('common.buyNow')}</DialogTitle>
                         <DialogDescription>{productName} {quantity > 1 ? `x ${quantity}` : ''}</DialogDescription>
@@ -145,7 +177,20 @@ export function BuyButton({ productId, price, productName, disabled, quantity = 
                             <span>{numericalPrice.toFixed(2)}</span>
                         </div>
 
-                        {points > 0 && (
+                    <div className="floating-field">
+                        <Input
+                            id="email"
+                            type="text"
+                            placeholder=" "
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                        />
+                        <Label htmlFor="email" className="floating-label">
+                            {emailConfigured ? t('buy.modal.emailLabelConfigured') : t('buy.modal.emailLabelUnconfigured')}
+                        </Label>
+                    </div>
+
+                        {points > 0 && maxPointDeduction > 0 && (
                             <div className="flex items-center space-x-2 border p-3 rounded-md">
                                 <input
                                     type="checkbox"
@@ -171,11 +216,11 @@ export function BuyButton({ productId, price, productName, disabled, quantity = 
                         </div>
                     </div>
 
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setOpen(false)} disabled={loading}>
+                    <DialogFooter className="gap-2 sm:gap-0">
+                        <Button variant="outline" className="rounded-xl" onClick={() => setOpen(false)} disabled={loading}>
                             {t('common.cancel')}
                         </Button>
-                        <Button onClick={handleBuy} disabled={loading} className="bg-foreground text-background hover:bg-foreground/90">
+                        <Button onClick={handleBuy} disabled={loading} className="rounded-xl bg-primary font-medium text-primary-foreground hover:bg-primary/90">
                             {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             {finalPrice === 0 ? t('buy.modal.payWithPoints') : t('buy.modal.proceedPayment')}
                         </Button>

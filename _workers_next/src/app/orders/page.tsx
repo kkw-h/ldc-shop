@@ -1,26 +1,20 @@
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
-import { orders, reviews } from "@/lib/db/schema"
+import { orders, reviews, products } from "@/lib/db/schema"
 import { eq, desc, inArray } from "drizzle-orm"
 import { redirect } from "next/navigation"
 import { OrdersContent } from "@/components/orders-content"
-import { cancelExpiredOrders } from "@/lib/db/queries"
-
-export const dynamic = 'force-dynamic';
+import { normalizeTimestampMs, getProductVariantLabels } from "@/lib/db/queries"
+import { unstable_noStore } from "next/cache"
 
 export default async function OrdersPage() {
+    unstable_noStore()
     const session = await auth()
-    if (!session?.user) redirect('/api/auth/signin')
-
-    try {
-        await cancelExpiredOrders({ userId: session.user.id || undefined })
-    } catch {
-        // Best effort cleanup
-    }
+    if (!session?.user) redirect('/login')
 
     const userOrders = await db.query.orders.findMany({
         where: eq(orders.userId, session.user.id || ''),
-        orderBy: [desc(orders.createdAt)]
+        orderBy: [desc(normalizeTimestampMs(orders.createdAt))]
     })
 
     // Get reviewed order IDs for delivered orders
@@ -40,6 +34,23 @@ export default async function OrdersPage() {
         }
     }
 
+    const productIds = Array.from(new Set(userOrders.map((o: any) => o.productId).filter(Boolean)))
+    const productVariantLabels = productIds.length > 0 ? await getProductVariantLabels(productIds) : {}
+
+    let productImages: Record<string, string | null> = {}
+    if (productIds.length > 0) {
+        try {
+            const rows = await db.select({ id: products.id, image: products.image })
+                .from(products)
+                .where(inArray(products.id, productIds))
+            for (const row of rows) {
+                if (row.image) productImages[row.id] = row.image
+            }
+        } catch {
+            productImages = {}
+        }
+    }
+
     return (
         <OrdersContent
             orders={userOrders.map((o: any) => ({
@@ -51,6 +62,8 @@ export default async function OrdersPage() {
                 createdAt: o.createdAt,
                 canReview: o.status === 'delivered' && !reviewedOrderIds.includes(o.orderId)
             }))}
+            productVariantLabels={productVariantLabels}
+            productImages={productImages}
         />
     )
 }

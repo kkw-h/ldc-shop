@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { useI18n } from "@/lib/i18n/context"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -10,6 +10,7 @@ import { CopyButton } from "@/components/copy-button"
 import { ClientDate } from "@/components/client-date"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { requestRefund } from "@/actions/refund-requests"
 import { toast } from "sonner"
 import { useEffect } from "react"
@@ -21,6 +22,7 @@ interface Order {
     orderId: string
     productId?: string | null
     productName: string
+    productVariantLabel?: string | null
     amount: string
     status: string
     cardKey: string | null
@@ -33,14 +35,32 @@ interface OrderContentProps {
     order: Order
     canViewKey: boolean
     isOwner: boolean
-    refundRequest: { status: string | null; reason: string | null } | null
+    refundRequest: { status: string | null; reason: string | null; adminNote?: string | null } | null
 }
 
 export function OrderContent({ order, canViewKey, isOwner, refundRequest }: OrderContentProps) {
     const { t } = useI18n()
     const [reason, setReason] = useState("")
     const [submitting, setSubmitting] = useState(false)
+    const [confirmOpen, setConfirmOpen] = useState(false)
+    const submitLock = useRef(false)
     const isPayment = isPaymentOrder(order.productId)
+
+    const handleRefundConfirm = async () => {
+        if (submitLock.current) return
+        submitLock.current = true
+        setSubmitting(true)
+        try {
+            await requestRefund(order.orderId, reason)
+            toast.success(t('refund.requested'))
+            setConfirmOpen(false)
+        } catch (e: any) {
+            toast.error(e.message)
+        } finally {
+            setSubmitting(false)
+            submitLock.current = false
+        }
+    }
 
     const getStatusBadgeVariant = (status: string) => {
         switch (status) {
@@ -141,7 +161,12 @@ export function OrderContent({ order, canViewKey, isOwner, refundRequest }: Orde
                                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                                     {isPayment ? t('payment.itemLabel') : t('order.product')}
                                 </p>
-                                <p className="font-semibold">{isPayment ? t('payment.title') : order.productName}</p>
+                                <p className="font-semibold">
+                                    {isPayment ? t('payment.title') : order.productName}
+                                    {!isPayment && order.productVariantLabel && (
+                                        <span className="font-normal text-muted-foreground"> · {order.productVariantLabel}</span>
+                                    )}
+                                </p>
                             </div>
                             <div className="h-12 w-12 bg-gradient-to-br from-primary/20 to-primary/5 rounded-xl flex items-center justify-center border border-primary/20">
                                 {isPayment ? (
@@ -260,6 +285,8 @@ export function OrderContent({ order, canViewKey, isOwner, refundRequest }: Orde
                                         variant="outline"
                                         onClick={async () => {
                                             if (!confirm(t('order.confirmCancel'))) return
+                                            if (submitLock.current) return
+                                            submitLock.current = true
                                             setSubmitting(true)
                                             try {
                                                 const result = await cancelPendingOrder(order.orderId)
@@ -273,6 +300,7 @@ export function OrderContent({ order, canViewKey, isOwner, refundRequest }: Orde
                                                 toast.error(e.message)
                                             } finally {
                                                 setSubmitting(false)
+                                                submitLock.current = false
                                             }
                                         }}
                                         disabled={submitting}
@@ -282,14 +310,16 @@ export function OrderContent({ order, canViewKey, isOwner, refundRequest }: Orde
                                     <Button
                                         size="sm"
                                         onClick={async () => {
+                                            if (submitLock.current) return
+                                            submitLock.current = true
                                             setSubmitting(true)
                                             try {
                                                 const { getRetryPaymentParams } = await import("@/actions/checkout")
                                                 const result = await getRetryPaymentParams(order.orderId)
-                                                if (result.success && result.url && result.params) {
+                                                if (result.success && result.params) {
                                                     const form = document.createElement('form')
                                                     form.method = 'POST'
-                                                    form.action = result.url
+                                                    form.action = '/paying'
                                                     Object.entries(result.params).forEach(([k, v]) => {
                                                         const input = document.createElement('input')
                                                         input.type = 'hidden'
@@ -306,6 +336,7 @@ export function OrderContent({ order, canViewKey, isOwner, refundRequest }: Orde
                                                 toast.error(e.message)
                                             } finally {
                                                 setSubmitting(false)
+                                                submitLock.current = false
                                             }
                                         }}
                                         disabled={submitting}
@@ -317,51 +348,83 @@ export function OrderContent({ order, canViewKey, isOwner, refundRequest }: Orde
                         </div>
                     )}
 
-                    {isOwner && (order.status === 'paid' || order.status === 'delivered') && Number(order.amount) > 0 && (
+                    {isOwner && (order.status === 'paid' || order.status === 'delivered') && (
                         <>
                             <Separator className="bg-border/50" />
-                            <div className="space-y-3">
-                                <h3 className="font-semibold">{t('refund.requestTitle')}</h3>
-                                {refundRequest?.status ? (
+                            {refundRequest?.status && (
+                                <div className="space-y-1">
+                                    <h3 className="font-semibold">{t('refund.requestTitle')}</h3>
                                     <div className="text-sm text-muted-foreground">
-                                        {t('refund.requestStatus', { status: refundRequest.status })}
+                                        {t('refund.requestStatus', { status: t(`refund.statusValues.${refundRequest.status}`) })}
                                     </div>
-                                ) : (
-                                    <div className="text-sm text-muted-foreground">
-                                        {t('refund.requestHint')}
-                                    </div>
-                                )}
-                                <Textarea
-                                    value={reason}
-                                    onChange={(e) => setReason(e.target.value)}
-                                    placeholder={t('refund.reasonPlaceholder')}
-                                    rows={3}
-                                    className="resize-none"
-                                    disabled={submitting || !!refundRequest?.status}
-                                />
-                                <div className="flex justify-end">
-                                    <Button
-                                        onClick={async () => {
-                                            setSubmitting(true)
-                                            try {
-                                                await requestRefund(order.orderId, reason)
-                                                toast.success(t('refund.requested'))
-                                            } catch (e: any) {
-                                                toast.error(e.message)
-                                            } finally {
-                                                setSubmitting(false)
-                                            }
-                                        }}
-                                        disabled={submitting || !!refundRequest?.status}
-                                    >
-                                        {submitting ? t('common.processing') : t('refund.requestButton')}
-                                    </Button>
+                                    {refundRequest.adminNote && (
+                                        <div className="text-sm text-muted-foreground">
+                                            {t('refund.adminNote')}{refundRequest.adminNote}
+                                        </div>
+                                    )}
                                 </div>
+                            )}
+                            <div className="flex gap-3">
+                                {order.productId && !isPayment && (
+                                    <Button
+                                        variant="outline"
+                                        className="flex-1"
+                                        onClick={() => {
+                                            window.location.href = `/buy/${order.productId}#reviews`
+                                        }}
+                                    >
+                                        {t('order.goReview')}
+                                    </Button>
+                                )}
+                                {Number(order.amount) > 0 && !refundRequest?.status && (
+                                    <Button
+                                        variant="destructive"
+                                        className={order.productId && !isPayment ? "flex-1" : "w-full"}
+                                        onClick={() => setConfirmOpen(true)}
+                                        disabled={submitting}
+                                    >
+                                        {t('refund.requestTitle')}
+                                    </Button>
+                                )}
                             </div>
                         </>
                     )}
                 </CardContent>
             </Card>
+
+            <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+                <DialogContent className="sm:max-w-[420px]">
+                    <DialogHeader>
+                        <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+                                <AlertCircle className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <DialogTitle className="text-base">{t('refund.requestConfirmTitle')}</DialogTitle>
+                                <DialogDescription className="text-sm">
+                                    {t('refund.requestConfirmMessage')}
+                                </DialogDescription>
+                            </div>
+                        </div>
+                    </DialogHeader>
+                    <Textarea
+                        value={reason}
+                        onChange={(e) => setReason(e.target.value)}
+                        placeholder={t('refund.reasonPlaceholder')}
+                        rows={3}
+                        className="resize-none"
+                        disabled={submitting}
+                    />
+                    <DialogFooter className="sm:justify-end">
+                        <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={submitting}>
+                            {t('common.cancel')}
+                        </Button>
+                        <Button variant="destructive" onClick={handleRefundConfirm} disabled={submitting}>
+                            {submitting ? t('common.processing') : t('common.confirm')}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </main>
     )
 }

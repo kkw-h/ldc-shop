@@ -5,7 +5,8 @@ import { useI18n } from "@/lib/i18n/context"
 import Link from "next/link"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { CreditCard, Package, Search, Star } from "lucide-react"
+import { CreditCard, Search, Star } from "lucide-react"
+import { ProductImagePlaceholder } from "@/components/product-image-placeholder"
 import { ClientDate } from "@/components/client-date"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -21,7 +22,7 @@ interface Order {
     canReview?: boolean
 }
 
-export function OrdersContent({ orders }: { orders: Order[] }) {
+export function OrdersContent({ orders, productVariantLabels = {}, productImages = {} }: { orders: Order[]; productVariantLabels?: Record<string, string | null>; productImages?: Record<string, string | null> }) {
     const { t } = useI18n()
     const [query, setQuery] = useState("")
     const [status, setStatus] = useState<string>("all")
@@ -50,7 +51,9 @@ export function OrdersContent({ orders }: { orders: Order[] }) {
     ]
 
     const getOrderName = (order: Order) => {
-        return isPaymentOrder(order.productId) ? t('payment.title') : order.productName
+        const base = isPaymentOrder(order.productId) ? t('payment.title') : order.productName
+        const variant = order.productId ? productVariantLabels[order.productId] : null
+        return variant ? `${base} · ${variant}` : base
     }
 
     const filtered = useMemo(() => {
@@ -64,7 +67,7 @@ export function OrdersContent({ orders }: { orders: Order[] }) {
             const hay = [o.orderId, o.productName, displayName].join(' ').toLowerCase()
             return hay.includes(q)
         })
-    }, [orders, query, status, t])
+    }, [orders, query, status, productVariantLabels, t])
 
     return (
         <main className="container py-12">
@@ -103,40 +106,48 @@ export function OrdersContent({ orders }: { orders: Order[] }) {
                     filtered.map(order => (
                         <Card key={order.orderId} className="hover:border-primary/50 transition-colors">
                             <Link href={`/order/${order.orderId}`}>
-                                <div className="flex items-center p-6 gap-4">
-                                    <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center shrink-0">
-                                        {isPaymentOrder(order.productId) ? (
-                                            <CreditCard className="h-6 w-6 text-muted-foreground" />
+                                <div className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center">
+                                    <div className="h-12 w-12 rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
+                                        {!isPaymentOrder(order.productId) && order.productId && productImages[order.productId] ? (
+                                            <img
+                                                src={productImages[order.productId]!}
+                                                alt=""
+                                                className="h-full w-full object-cover"
+                                            />
+                                        ) : isPaymentOrder(order.productId) ? (
+                                            <div className="h-full w-full bg-muted flex items-center justify-center">
+                                                <CreditCard className="h-6 w-6 text-muted-foreground" />
+                                            </div>
                                         ) : (
-                                            <Package className="h-6 w-6 text-muted-foreground" />
+                                            <ProductImagePlaceholder productId={order.productId || order.orderId} productName={order.productName} size="xs" />
                                         )}
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between mb-1">
+                                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                                             <h3 className="font-semibold truncate">{getOrderName(order)}</h3>
-                                            <span className="font-bold">{Number(order.amount)} {t('common.credits')}</span>
+                                            <span className="font-bold shrink-0">{Number(order.amount)} {t('common.credits')}</span>
                                         </div>
-                                        <div className="flex items-center justify-between text-sm text-muted-foreground">
-                                            <span className="font-mono">{order.orderId}</span>
+                                        <div className="flex flex-col gap-1 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+                                            <span className="font-mono truncate">{order.orderId}</span>
                                             <ClientDate value={order.createdAt} />
                                         </div>
-                                    </div>
-                                    <div className="flex items-center gap-2 ml-2">
-                                        {order.canReview && !isPaymentOrder(order.productId) && (
-                                            <Link 
-                                                href={`/buy/${order.productId}#reviews`}
-                                                onClick={(e) => e.stopPropagation()}
-                                                className="shrink-0"
-                                            >
-                                                <Button size="sm" variant="outline" className="gap-1">
-                                                    <Star className="h-3 w-3" />
-                                                    {t('orders.writeReview')}
-                                                </Button>
-                                            </Link>
-                                        )}
-                                        <Badge variant={getStatusBadgeVariant(order.status)} className="capitalize shrink-0">
-                                            {getStatusText(order.status)}
-                                        </Badge>
+                                        <div className="mt-2 flex flex-wrap items-center gap-2 sm:justify-end">
+                                            {order.canReview && !isPaymentOrder(order.productId) && (
+                                                <Link
+                                                    href={`/buy/${order.productId}#reviews`}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className="shrink-0"
+                                                >
+                                                    <Button size="sm" variant="outline" className="gap-1">
+                                                        <Star className="h-3 w-3" />
+                                                        {t('orders.writeReview')}
+                                                    </Button>
+                                                </Link>
+                                            )}
+                                            <Badge variant={getStatusBadgeVariant(order.status)} className="capitalize shrink-0">
+                                                {getStatusText(order.status)}
+                                            </Badge>
+                                        </div>
                                     </div>
                                 </div>
                             </Link>
